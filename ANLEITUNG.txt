@@ -1,0 +1,12 @@
+Fahrstunden-Zeiten – APK ohne Android Studio
+
+Dieses Projekt ist für einen Online-Build vorbereitet.
+
+1. ZIP entpacken.
+2. Den Ordner als Repository bei GitHub hochladen.
+3. In GitHub auf Actions -> Fahrstunden APK bauen -> Run workflow.
+4. Nach dem Build das Artefakt „Fahrstunden-APK“ öffnen.
+5. Darin liegt app-debug.apk.
+6. APK aufs Android-Handy kopieren und installieren.
+
+Hinweis: Für den GitHub-Weg brauchst du ein GitHub-Konto. Android Studio ist auf dem alten PC nicht nötig.

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Fahrstunden-Zeiten</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f6f8;color:#17212b}
+header{background:#1565c0;color:#fff;padding:10px 12px;position:sticky;top:0;z-index:5}
+h1{font-size:18px;margin:0 0 8px}.row{display:flex;gap:6px;flex-wrap:wrap}
+button{border:0;border-radius:8px;padding:8px 10px;background:#fff;color:#1565c0;font-weight:700}
+input,textarea{width:100%;border:1px solid #ccd3da;border-radius:7px;padding:8px;font-size:14px}
+textarea{min-height:90px;resize:vertical}.panel{background:#fff;margin:8px;border-radius:10px;padding:9px;box-shadow:0 1px 4px #0001}
+.small{font-size:12px;color:#66717b}.days{display:grid;grid-template-columns:72px repeat(6,minmax(80px,1fr));min-width:552px}
+.day{font-weight:700;text-align:center;background:#e9eef4;padding:7px;border-right:1px solid #d6dde5}
+.time{height:28px;border-top:1px solid #dfe4e8;font-size:10px;padding:7px 3px;text-align:right;color:#65717c}
+.cell{height:28px;border-top:1px solid #dfe4e8;border-right:1px solid #edf0f2;position:relative}
+.bar{position:absolute;left:3px;right:3px;border-radius:5px;background:#1976d2;color:#fff;font-size:10px;padding:2px 3px;overflow:hidden;white-space:nowrap}
+.person{display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #eee}
+.dot{width:12px;height:12px;border-radius:50%;background:#1976d2}.name{flex:1;font-weight:700}
+.wrap{overflow:auto}.note{font-size:12px;background:#fff8d8;padding:7px;border-radius:7px;margin-top:6px}
+#people{max-height:190px;overflow:auto}
+</style>
+</head>
+<body>
+<header>
+<h1>Fahrstunden-Zeiten</h1>
+<div class="row">
+<button onclick="addPerson()">+ Person</button>
+<button onclick="document.getElementById('import').scrollIntoView()">Text eingeben</button>
+<button onclick="voice()">🎤 Stimme</button>
+<button onclick="backup()">Backup</button>
+<label style="background:#fff;color:#1565c0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer">Restore<input id="restore" type="file" accept=".json" style="display:none" onchange="restore(this)"></label>
+</div>
+</header>
+
+<section class="panel">
+<div class="small">Personen</div>
+<div id="people"></div>
+</section>
+
+<section class="panel" id="import">
+<b>Verfügbarkeit als Text einfügen</b>
+<textarea id="txt" placeholder="Beispiel:
+Lisa
+Montag 07:00-09:00
+Dienstag ab 15:30
+Donnerstag ab 15:30
+
+Daniela
+Montag-Freitag ab 16:00"></textarea>
+<div class="row" style="margin-top:6px"><button onclick="importText()">Übernehmen</button><button onclick="document.getElementById('txt').value=''">Leeren</button></div>
+<div class="note">„ab 16:00“ wird automatisch als 16:00–23:30 gespeichert. Nicht genannte Tage bleiben unverändert.</div>
+</section>
+
+<section class="panel">
+<div class="small">Wochenübersicht · Montag bis Samstag · 15-Minuten-Raster</div>
+<div class="wrap"><div id="grid"></div></div>
+</section>
+
+<script>
+const days=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+let people=JSON.parse(localStorage.getItem('fahrstunden_people')||'[]');
+const colors=['#1976d2','#2e7d32','#8e24aa','#ef6c00','#00838f','#c62828','#6d4c41','#3949ab'];
+function save(){localStorage.setItem('fahrstunden_people',JSON.stringify(people));render();}
+function addPerson(){let n=prompt('Name der Person:');if(!n)return;if(!people.some(p=>p.name.toLowerCase()==n.trim().toLowerCase()))people.push({name:n.trim(),times:{}});save();}
+function voice(){if(!('webkitSpeechRecognition'in window||'SpeechRecognition'in window)){alert('Spracherkennung wird auf diesem Gerät nicht unterstützt.');return}let R=window.SpeechRecognition||window.webkitSpeechRecognition,r=new R();r.lang='de-DE';r.onresult=e=>{document.getElementById('txt').value=e.results[0][0].transcript;importText()};r.start();}
+function parseRange(s){s=s.replace(/–/g,'-').replace(/\s+/g,'');let m=s.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);if(m)return[m[1],m[2]];m=s.match(/ab(\d{1,2}:\d{2})/i);if(m)return[m[1],'23:30'];m=s.match(/(\d{1,2}:\d{2})/);if(m)return[m[1],'23:30'];return null}
+function importText(){
+ let lines=document.getElementById('txt').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean), current=null;
+ const dayMap={montag:'Montag',dienstag:'Dienstag',mittwoch:'Mittwoch',donnerstag:'Donnerstag',freitag:'Freitag',samstag:'Samstag'};
+ for(let raw of lines){
+   let low=raw.toLowerCase();
+   let dm=days.find(d=>low.startsWith(d.toLowerCase()));
+   if(dm){ if(!current)continue; let r=parseRange(raw); if(r){current.times[dm]=current.times[dm]||[];current.times[dm].push(r)} else if(/-/.test(raw))current.times[dm]=[]; continue}
+   let range=parseRange(raw);
+   if(range && current){continue}
+   let m=raw.match(/^(?:name\s*[:\-]\s*)?(.+?)(?:\s*[:\-]\s*)?$/i);
+   if(m){let name=m[1].trim(); if(name && !/^(ab|ganztägig|flexibel)$/i.test(name)){current=people.find(p=>p.name.toLowerCase()===name.toLowerCase());if(!current){current={name,times:{}};people.push(current)}}}
+ }
+ save();alert('Text übernommen.');
+}
+function minutes(t){let [h,m]=t.split(':').map(Number);return h*60+m}
+function renderPeople(){let el=document.getElementById('people');el.innerHTML='';people.forEach((p,i)=>{let d=document.createElement('div');d.className='person';d.innerHTML=`<span class="dot" style="background:${colors[i%colors.length]}"></span><span class="name">${esc(p.name)}</span><button onclick="editPerson(${i})">Bearbeiten</button><button onclick="delPerson(${i})">×</button>`;el.appendChild(d)})}
+function editPerson(i){let n=prompt('Name:',people[i].name);if(n){people[i].name=n.trim();save()}}
+function delPerson(i){if(confirm('Person löschen?')){people.splice(i,1);save()}}
+function render(){
+ renderPeople();let grid=document.getElementById('grid');grid.innerHTML='';
+ let head=document.createElement('div');head.className='days';head.innerHTML='<div class="day">Zeit</div>'+days.map(d=>`<div class="day">${d.slice(0,2)}</div>`).join('');grid.appendChild(head);
+ for(let min=420;min<=1410;min+=15){
+   let row=document.createElement('div');row.className='days';row.innerHTML=`<div class="time">${String(Math.floor(min/60)).padStart(2,'0')}:${String(min%60).padStart(2,'0')}</div>`+days.map(()=>'<div class="cell"></div>').join('');grid.appendChild(row);
+ }
+ // overlay bars per day by absolute positioning inside each day's cells
+ let rows=Array.from(grid.querySelectorAll('.days')).slice(1);
+ people.forEach((p,pi)=>days.forEach((d,di)=>{
+   (p.times[d]||[]).forEach(r=>{
+     let s=minutes(r[0]),e=minutes(r[1]); if(e<=s)return;
+     let start=Math.max(420,s), end=Math.min(1410,e);
+     if(end<=start)return;
+     let first=Math.floor((start-420)/15), last=Math.ceil((end-420)/15)-1;
+     let top=first*28+2, height=Math.max(12,(last-first+1)*28-4);
+     let cell=rows[first]?.children[di+1]; if(!cell)return;
+     let bar=document.createElement('div');bar.className='bar';bar.style.top='2px';bar.style.height=height+'px';bar.style.background=colors[pi%colors.length];bar.textContent=p.name;
+     cell.appendChild(bar);
+   })
+ }));
+}
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function backup(){let a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(people));a.download='fahrstunden-backup.json';a.click()}
+function restore(inp){let f=inp.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{people=JSON.parse(r.result);save();alert('Backup wiederhergestellt.')}catch(e){alert('Ungültiges Backup.')}};r.readAsText(f)}
+render();
+</script>
+</body>
+</html>
